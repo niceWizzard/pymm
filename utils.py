@@ -8,26 +8,46 @@ from statsmodels.tsa.arima.model import ARIMA
 from sklearn.metrics import mean_squared_error as MSE, mean_absolute_percentage_error as MAPE, mean_absolute_error as MAE
 
 
-def arima_grid_search(df : DataFrame, d: int, log:bool = True) -> tuple[ARIMA, DataFrame]:
+def arima_grid_search(df: DataFrame, d: int, log: bool = True) -> tuple[ARIMA, DataFrame]:
     """
-        Assumes the time series is stationary
+    Assumes the time series is stationary.
+    Returns the best ARIMA model (fitted) and a DataFrame of model metrics.
     """
     if not adf_test(df):
         raise ValueError(f"Time series {df.index.name} is not stationary!")
+
     possible_ar, possible_ma = get_significant_pacf(df), get_significant_acf(df)
+    if log:
+        print(possible_ar, possible_ma)
     model_list = []
-    print(f"Trying {len(possible_ar) * len(possible_ma)} combinations...")
+
+    if log:
+        total_combos = len(possible_ar) * len(possible_ma)
+        print(f"Trying {total_combos} combinations...")
+
     for ar in possible_ar:
         for ma in possible_ma:
-            model = ARIMA(df, order=(ar, d, ma)).fit()
-            model_list.append(
-                (f"ARIMA({ar}, {d}, {ma})", ar, d, ma, model.aic, model.bic)
-            )
-    model_list_df = DataFrame(model_list, columns=["text", "ar", "d", "ma", "aic", "bic"]).sort_values("bic")
+            try:
+                model = ARIMA(df, order=(ar, d, ma)).fit()
+                model_list.append((f"ARIMA({ar}, {d}, {ma})", ar, d, ma, model.aic, model.bic))
+            except Exception as e:
+                if log:
+                    print(f"Failed ARIMA({ar}, {d}, {ma}): {e}")
+
+    if not model_list:
+        raise RuntimeError("No ARIMA models converged successfully.")
+
+    model_list_df = DataFrame(
+        model_list, columns=["text", "ar", "d", "ma", "aic", "bic"]
+    ).sort_values("bic")
+
     if log:
         print(model_list_df)
-    best_model = model_list_df.iloc[0]
-    return (ARIMA(df, order=(best_model["ar"], best_model["d"], best_model["ma"])), best_model)
+
+    best_model_row = model_list_df.iloc[0]
+    best_model = ARIMA(df, order=(best_model_row["ar"], best_model_row["d"], best_model_row["ma"])).fit()
+    return best_model, best_model_row
+
         
 
 
